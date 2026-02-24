@@ -1,0 +1,31 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+bin/
+build/
+develop-eggs/
+dist/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Pygame/OpenCV/Mediapipe artifacts
+.DS_Store
+
+# Virtual environment
+venv/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
