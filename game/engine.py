@@ -1,10 +1,15 @@
 import time
+import logging
 from typing import Dict, Any
 from core.event_types import GameState, GameStatus, GameCommand, Point
 from core.state_manager import StateManager
 from game.board import Board
 from game.snake import Snake
 from game.abilities import PhaseAbility, BoostAbility
+
+
+# Set up logger
+logger = logging.getLogger("pybite.engine")
 
 class GameEngine:
     """Orchestrates game logic updates based on commands."""
@@ -86,19 +91,21 @@ class GameEngine:
             self._do_move()
             
     def _do_move(self):
-        """Performs a single movement step."""
-        self.snake.move()
+        """Performs a single movement step with screen wrapping."""
+        # Enable wrapping by passing board dimensions
+        self.snake.move(board_size=(self.board.width, self.board.height))
         head = self.snake.head
         
-        # 1. Check Wall Collision
-        if not self.board.is_within_bounds(head):
-            self.state_manager.end_game()
-            return
+        # 1. Wall Collision (Removed as requested - snake now wraps)
             
         # 2. Check Self Collision
         if self.snake.check_collision_with_self(self.state.phase_active):
-            self.state_manager.end_game()
-            return
+            if self.state.phase_active:
+                logger.info("Self-collision IGNORED due to Phase Mode")
+            else:
+                logger.warning("GAME OVER: Snake hit itself!")
+                self.state_manager.end_game()
+                return
             
         # 3. Check Food Consumption
         if head.x == self.state.food_position.x and head.y == self.state.food_position.y:

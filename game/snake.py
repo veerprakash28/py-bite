@@ -24,8 +24,8 @@ class Snake:
         if command in opposites and command != opposites.get(self.direction):
             self._next_direction = command
             
-    def move(self):
-        """Updates snake body positions based on current direction."""
+    def move(self, board_size: Optional[tuple] = None):
+        """Updates snake body positions based on current direction with optional wrapping."""
         self.direction = self._next_direction
         
         new_head = Point(self.head.x, self.head.y)
@@ -37,6 +37,12 @@ class Snake:
             new_head.x -= 1
         elif self.direction == GameCommand.RIGHT:
             new_head.x += 1
+            
+        # Screen Wrapping Logic
+        if board_size:
+            w, h = board_size
+            new_head.x = new_head.x % w
+            new_head.y = new_head.y % h
             
         self.head = new_head
         self.body.insert(0, new_head)

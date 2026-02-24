@@ -1,5 +1,6 @@
 import sys
 import os
+import time
 
 # Add project root to sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,9 +19,12 @@ from core.event_types import GameStatus, GameCommand
 # --- Configuration ---
 CELL_SIZE = 30
 GRID_SIZE = (20, 20)
-WINDOW_WIDTH = GRID_SIZE[0] * CELL_SIZE
-WINDOW_HEIGHT = GRID_SIZE[1] * CELL_SIZE + 100 # Extra space for UI
-CAMERA_WINDOW_WIDTH = 200 # Small overlay for camera
+GRID_WIDTH = GRID_SIZE[0] * CELL_SIZE
+GRID_HEIGHT = GRID_SIZE[1] * CELL_SIZE
+SIDEBAR_WIDTH = 250
+WINDOW_WIDTH = GRID_WIDTH + SIDEBAR_WIDTH
+WINDOW_HEIGHT = GRID_HEIGHT + 100 
+CAMERA_DISPLAY_WIDTH = 220
 
 # Colors
 COLOR_BG = (20, 20, 30)
@@ -49,6 +53,7 @@ class PyBiteApp:
         
         self.running = True
         self.debug_gestures = {}
+        self._ready_to_restart = False
         
     def _handle_keyboard_fallback(self) -> Dict[str, Any]:
         """Allows keyboard control for testing."""
@@ -99,51 +104,129 @@ class PyBiteApp:
         
         # 5. Handle States
         if state.status == GameStatus.GAME_OVER:
-            self._render_overlay_text("GAME OVER", "Press 'R' or Fist to Restart")
+            self._render_overlay_text("GAME OVER", "Wait 1s then Fist to Restart")
         elif state.status == GameStatus.MENU:
             self._render_overlay_text("PYBITE", "Show Hand to Start")
+            
+        # 6. Flash effect for PHASE mode
+        if state.phase_active:
+             flash = pygame.Surface((GRID_WIDTH, GRID_HEIGHT), pygame.SRCALPHA)
+             flash.fill((138, 43, 226, 40)) # Translucent purple
+             self.screen.blit(flash, (0,0))
 
     def _render_ui(self, state):
         # Background bar
-        pygame.draw.rect(self.screen, COLOR_UI_BAR_BG, (0, WINDOW_HEIGHT-100, WINDOW_WIDTH, 100))
+        pygame.draw.rect(self.screen, COLOR_UI_BAR_BG, (0, GRID_HEIGHT, WINDOW_WIDTH, 100))
         
         # Score
-        score_txt = self.font.render(f"Score: {state.score}  |  Level: {int((state.difficulty-1)*10)+1}", True, COLOR_UI_TEXT)
-        self.screen.blit(score_txt, (20, WINDOW_HEIGHT-80))
+        score_txt = self.font.render(f"S: {state.score}", True, COLOR_UI_TEXT)
+        self.screen.blit(score_txt, (10, GRID_HEIGHT + 20))
+        level_txt = self.font.render(f"L: {int((state.difficulty-1)*10)+1}", True, COLOR_UI_TEXT)
+        self.screen.blit(level_txt, (10, GRID_HEIGHT + 55))
         
         # Phase Cooldown Meter
         cd_width = 150
-        pygame.draw.rect(self.screen, (30, 30, 30), (WINDOW_WIDTH - 170, WINDOW_HEIGHT-80, cd_width, 20))
+        meter_x = WINDOW_WIDTH - 170
+        pygame.draw.rect(self.screen, (30, 30, 30), (meter_x, GRID_HEIGHT + 20, cd_width, 20))
         if state.phase_cooldown <= 0:
-            pygame.draw.rect(self.screen, COLOR_PHASE, (WINDOW_WIDTH - 170, WINDOW_HEIGHT-80, cd_width, 20))
+            pygame.draw.rect(self.screen, COLOR_PHASE, (meter_x, GRID_HEIGHT + 20, cd_width, 20))
         else:
-            # Show progress
             progress = 1.0 - (state.phase_cooldown / 10.0)
-            pygame.draw.rect(self.screen, (100, 100, 100), (WINDOW_WIDTH - 170, WINDOW_HEIGHT-80, int(cd_width * progress), 20))
-        self.screen.blit(self.font.render("PHASE", True, COLOR_UI_TEXT), (WINDOW_WIDTH - 170, WINDOW_HEIGHT - 55))
+            pygame.draw.rect(self.screen, (100, 100, 100), (meter_x, GRID_HEIGHT + 20, int(cd_width * progress), 20))
+        self.screen.blit(self.font.render("PHASE", True, COLOR_UI_TEXT), (meter_x, GRID_HEIGHT + 45))
 
         # Boost Meter
-        pygame.draw.rect(self.screen, (30, 30, 30), (WINDOW_WIDTH - 170, WINDOW_HEIGHT-30, cd_width, 10))
-        pygame.draw.rect(self.screen, COLOR_BOOST, (WINDOW_WIDTH - 170, WINDOW_HEIGHT-30, int(cd_width * (state.boost_meter/100)), 10))
+        pygame.draw.rect(self.screen, (30, 30, 30), (meter_x, GRID_HEIGHT + 70, cd_width, 10))
+        pygame.draw.rect(self.screen, COLOR_BOOST, (meter_x, GRID_HEIGHT + 70, int(cd_width * (state.boost_meter/100)), 10))
+
+        # --- Gesture Indicators ---
+        self._render_gesture_indicators()
+
+    def _render_gesture_indicators(self):
+        """Draws visual icons for detected gestures in the bottom panel."""
+        panel_y = GRID_HEIGHT + 10
+        start_x = 100
+        spacing = 45
+        
+        # Show raw offsets for debugging direction issues
+        if self.debug_gestures and "raw" in self.debug_gestures:
+             raw = self.debug_gestures["raw"]
+             off_txt = f"dx: {raw[0]:.2f} dy: {raw[1]:.2f}"
+             off_surf = pygame.font.SysFont("Arial", 12).render(off_txt, True, (255, 255, 0))
+             self.screen.blit(off_surf, (WINDOW_WIDTH // 2 - 30, GRID_HEIGHT + 80))
+
+        gestures = [
+            ("↑", "direction", "UP"),
+            ("↓", "direction", "DOWN"),
+            ("←", "direction", "LEFT"),
+            ("→", "direction", "RIGHT"),
+            ("P", "phase", True),
+            ("B", "boost", True)
+        ]
+        
+        for i, (label, key, active_val) in enumerate(gestures):
+            is_active = self.debug_gestures.get(key) == active_val
+            color = (255, 255, 255) if is_active else (80, 80, 100)
+            bg_color = (0, 200, 0) if is_active else (40, 40, 60)
+            
+            rect = (start_x + i * spacing, panel_y, 40, 40)
+            pygame.draw.rect(self.screen, bg_color, rect, border_radius=8)
+            
+            txt_surf = self.font.render(label, True, color)
+            self.screen.blit(txt_surf, (rect[0] + 20 - txt_surf.get_width()//2, rect[1] + 20 - txt_surf.get_height()//2))
+            
+            # Label below icons
+            hint_map = {"UP": "Dir", "DOWN": " ", "LEFT": " ", "RIGHT": " ", "phase": "PHASE", "boost": "BST"}
+            hint = hint_map.get(active_val if key == "direction" else key, "")
+            if hint:
+                hint_surf = pygame.font.SysFont("Arial", 12).render(hint, True, COLOR_UI_TEXT)
+                self.screen.blit(hint_surf, (rect[0] + 20 - hint_surf.get_width()//2, rect[1] + 45))
 
     def _render_camera_overlay(self):
         frame = self.camera.read()
+        sidebar_x = GRID_WIDTH + (SIDEBAR_WIDTH - CAMERA_DISPLAY_WIDTH) // 2
+        
+        # Draw Sidebar background for contrast
+        pygame.draw.rect(self.screen, (10, 10, 20), (GRID_WIDTH, 0, SIDEBAR_WIDTH, GRID_HEIGHT))
+        pygame.draw.line(self.screen, (50, 50, 70), (GRID_WIDTH, 0), (GRID_WIDTH, GRID_HEIGHT), 2)
+
         if frame is not None:
             # Draw landmarks for visual feedback
             self.tracker.draw_landmarks(frame)
             
-            # Resize for overlay
-            frame_small = cv2.resize(frame, (CAMERA_WINDOW_WIDTH, int(CAMERA_WINDOW_WIDTH * 0.75)))
+            # Resize for sidebar
+            frame_small = cv2.resize(frame, (CAMERA_DISPLAY_WIDTH, int(CAMERA_DISPLAY_WIDTH * 0.75)))
+
             # Convert BGR to RGB for Pygame
             frame_rgb = cv2.cvtColor(frame_small, cv2.COLOR_BGR2RGB)
             frame_surface = pygame.surfarray.make_surface(frame_rgb.swapaxes(0, 1))
-            self.screen.blit(frame_surface, (WINDOW_WIDTH - CAMERA_WINDOW_WIDTH - 10, 10))
+            self.screen.blit(frame_surface, (sidebar_x, 20))
             
-            # Draw gesture status text
+            # Draw gesture status text in sidebar
             if self.debug_gestures:
-                txt = f"Dir: {self.debug_gestures.get('direction')} Boost: {self.debug_gestures.get('boost')}"
-                debug_surface = self.font.render(txt, True, (0, 255, 0))
-                self.screen.blit(debug_surface, (WINDOW_WIDTH - CAMERA_WINDOW_WIDTH - 10, 160))
+                dir_txt = f"Direction: {self.debug_gestures.get('direction') or 'None'}"
+                boost_txt = f"Boost: {'ACTIVE' if self.debug_gestures.get('boost') else 'Off'}"
+                
+                dir_surf = self.font.render(dir_txt, True, (0, 255, 0))
+                bst_surf = self.font.render(boost_txt, True, (0, 191, 255))
+                
+                self.screen.blit(dir_surf, (sidebar_x, 190))
+                self.screen.blit(bst_surf, (sidebar_x, 220))
+                
+        # Instructions legend
+        legend_y = 280
+        legend_items = [
+            ("Index vs Wrist", "Move Snake"),
+            ("Pinch", "PHASE Mode"),
+            ("Fist", "Speed Boost"),
+            ("Fist (Over)", "Restart Game")
+        ]
+        for i, (act, res) in enumerate(legend_items):
+            pygame.draw.circle(self.screen, (0, 255, 0), (sidebar_x + 10, legend_y + i*45 + 10), 4)
+            a_surf = pygame.font.SysFont("Arial", 14, bold=True).render(act, True, (255,255,255))
+            r_surf = pygame.font.SysFont("Arial", 14).render(res, True, (150,150,150))
+            self.screen.blit(a_surf, (sidebar_x + 25, legend_y + i*45))
+            self.screen.blit(r_surf, (sidebar_x + 25, legend_y + i*45 + 18))
 
     def _render_overlay_text(self, title: str, subtitle: str):
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
@@ -175,10 +258,25 @@ class PyBiteApp:
             commands = self.interpreter.get_command(landmarks)
             self.debug_gestures = commands
             
-            # Handle Menu/Restart specifically
+            # Handle Menu/Restart with debounce and 1s safety delay
             if self.engine.state.status != GameStatus.PLAYING:
-                if commands.get("boost") or pygame.key.get_pressed()[pygame.K_r]:
-                    self.engine.reset()
+                # Add a cooldown so they don't instant-restart
+                if not hasattr(self, "_game_over_time"):
+                    self._game_over_time = time.time()
+                
+                # User must release the fist/R key and then press it again after 1s
+                if not commands.get("boost") and not pygame.key.get_pressed()[pygame.K_r]:
+                    self._ready_to_restart = True
+                    
+                if self._ready_to_restart and (time.time() - self._game_over_time > 1.5):
+                    if commands.get("boost") or pygame.key.get_pressed()[pygame.K_r]:
+                        print("Restarting game via gesture/key...")
+                        self.engine.reset()
+                        self._ready_to_restart = False
+                        delattr(self, "_game_over_time")
+            else:
+                if hasattr(self, "_game_over_time"):
+                    delattr(self, "_game_over_time")
 
             # Merge with keyboard fallback
             kb_commands = self._handle_keyboard_fallback()

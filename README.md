@@ -18,16 +18,36 @@ The core game engine and domain logic are now implemented. This includes:
 - `vision/`: MediaPipe gesture detection (Coming soon).
 - `tests/`: Unit tests for game mechanics.
 
-## 🧪 How to Test
+## 🧪 How to Setup and Test
 
-You can verify the game logic using `pytest`.
+It is recommended to use a virtual environment to keep dependencies isolated.
 
-1. **Install dependencies:**
+1. **Create a virtual environment:**
+   ```bash
+   python3 -m venv venv
+   ```
+
+2. **Activate the environment:**
+   - On macOS/Linux:
+     ```bash
+     source venv/bin/activate
+     ```
+   - On Windows:
+     ```bash
+     venv\Scripts\activate
+     ```
+
+3. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
 
-2. **Run tests:**
+4. **Run the game:**
+   ```bash
+   python app/main.py
+   ```
+
+5. **Run tests:**
    ```bash
    pytest tests/test_game_logic.py
    ```
